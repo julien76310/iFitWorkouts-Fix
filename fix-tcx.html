@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>fix-tcx — correcteur TCX local</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Arial;margin:20px}
+    button{margin:6px}
+    pre{background:#f6f8fa;padding:10px;border-radius:6px;max-height:300px;overflow:auto}
+  </style>
+</head>
+<body>
+  <h1>fix-tcx — correcteur TCX local</h1>
+  <p>Ouvre un dossier <strong>SRC</strong> et un dossier <strong>FINAL</strong>, puis traite tous les fichiers <code>.tcx</code>.</p>
+
+  <div>
+    <button id="pickSrc">Sélectionner le dossier SRC</button>
+    <span id="srcPath">— aucun</span>
+  </div>
+  <div>
+    <button id="pickDst">Sélectionner le dossier FINAL</button>
+    <span id="dstPath">— aucun</span>
+  </div>
+  <div>
+    <label for="weightInput">Poids (kg) :</label>
+    <input id="weightInput" type="number" value="70" min="30" max="200" step="1" style="width:80px;margin-left:6px">
+  </div>
+  <div>    <label for="stepsPerKmInput">Pas/km :</label>
+    <input id="stepsPerKmInput" type="number" value="1250" min="500" max="2000" step="50" style="width:80px;margin-left:6px">
+  </div>
+  <div>    <button id="start" disabled>Traiter les fichiers</button>
+    <button id="zipBtn" disabled>Traiter et télécharger ZIP</button>
+  </div>
+
+  <h3>Journal</h3>
+  <pre id="log">Prêt.
+</pre>
+
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script>
+    const pickSrc = document.getElementById('pickSrc');
+    const pickDst = document.getElementById('pickDst');
+    const srcPathEl = document.getElementById('srcPath');
+    const dstPathEl = document.getElementById('dstPath');
+    const startBtn = document.getElementById('start');
+    const logEl = document.getElementById('log');
+    const weightInput = document.getElementById('weightInput');
+    const stepsPerKmInput = document.getElementById('stepsPerKmInput');
+
+    let srcHandle = null;
+    let dstHandle = null;
+
+    function log(...args){
+      logEl.textContent += args.join(' ') + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    async function ensureFsAccess(){
+      if (!window.showDirectoryPicker) {
+        alert('Votre navigateur ne supporte pas l\'API File System Access. Utilisez Chrome/Edge récents.');
+        throw new Error('File System Access API not available');
+      }
+    }
+
+    pickSrc.addEventListener('click', async () => {
+      try{
+        await ensureFsAccess();
+        srcHandle = await window.showDirectoryPicker();
+        srcPathEl.textContent = srcHandle.name;
+        startBtn.disabled = !dstHandle;
+        log('SRC sélectionné :', srcHandle.name);
+      }catch(e){log('Erreur sélection SRC:', e.message)}
+    });
+
+    pickDst.addEventListener('click', async () => {
+      try{
+        await ensureFsAccess();
+        dstHandle = await window.showDirectoryPicker();
+        dstPathEl.textContent = dstHandle.name;
+        startBtn.disabled = !srcHandle;
+        log('FINAL sélectionné :', dstHandle.name);
+      }catch(e){log('Erreur sélection FINAL:', e.message)}
+    });
+
+    startBtn.addEventListener('click', async () => {
+      if (!srcHandle || !dstHandle) return alert('Choisissez SRC et FINAL');
+      startBtn.disabled = true;
+      try{
+        let count = 0;
+        const summaryEntries = [];
+        for await (const [name, entry] of srcHandle.entries()){
+          if (entry.kind === 'file' && name.toLowerCase().endsWith('.tcx')){
+            log('Lecture :', name);
+            const file = await entry.getFile();
+            let s = await file.text();
+
+            // 1) Forcer Activity Sport="Running"
+            s = s.replace(/(<Activity\b[^>]*\bSport=")([^"]*)(")/i, '$1Running$3');
+
+            // 2) Détecter distance max dans Trackpoints
+            const tpRegex = /<Trackpoint\b[\s\S]*?<DistanceMeters>([\d.]+)<\/DistanceMeters>[\s\S]*?<\/Trackpoint>/gi;
+            let m; let max = 0;
+            while ((m = tpRegex.exec(s)) !== null){
+              const val = parseFloat(m[1]); if (!isNaN(val) && val>max) max = val;
+            }
+
+            // 3) Mettre à jour ou ajouter <Lap><DistanceMeters>
+            if (max>0){
+              const lapDistRegex = /(<Lap\b[^>]*>[\s\S]*?<DistanceMeters>)([\d.]+)(<\/DistanceMeters>[\s\S]*?<\/Lap>)/i;
+              if (lapDistRegex.test(s)){
+                s = s.replace(lapDistRegex, function(_, a, _old, b){ return a + String(max) + b; });
+              }else{
+                s = s.replace(/(<Lap\b[^>]*>)/i, function(m0){ return m0 + '\n      <DistanceMeters>' + String(max) + '</DistanceMeters>'; });
+              }
+            } else {
+              log('Avertissement: aucune DistanceMeters trouvée dans les Trackpoints pour', name);
+            }
+
+            // calculer cadence moyenne et durée
+            const cadenceRegex = /<Cadence>([\d.]+)<\/Cadence>/gi;
+            let c; const cadences = [];
+            while ((c = cadenceRegex.exec(s)) !== null){ cadences.push(parseFloat(c[1])); }
+
+            const timeTpRegex = /<Trackpoint[\s\S]*?<Time>([^<]+)<\/Time>[\s\S]*?<\/Trackpoint>/gi;
+            let t; let firstTime = null; let lastTime = null;
+            while ((t = timeTpRegex.exec(s)) !== null){
+              const tm = t[1];
+              if (!firstTime) firstTime = tm;
+              lastTime = tm;
+            }
+
+            const altRegex = /<AltitudeMeters>([\d.-]+)<\/AltitudeMeters>/gi;
+            let a; const alts = [];
+            while ((a = altRegex.exec(s)) !== null){ alts.push(parseFloat(a[1])); }
+
+            // Watts / resistance extraction (pour treadmill)
+            const wattsRegex = /<Watts>([\d.]+)<\/Watts>/gi;
+            let w; const watts = [];
+            while ((w = wattsRegex.exec(s)) !== null){ watts.push(parseFloat(w[1])); }
+            const avgWattsTag = (s.match(/<AverageWatts>([\d.]+)<\/AverageWatts>/i) || [])[1];
+            const maxWattsTag = (s.match(/<MaxWatts>([\d.]+)<\/MaxWatts>/i) || (s.match(/<MaximumWatts>([\d.]+)<\/MaximumWatts>/i) || []))[1];
+            const resistanceTag = (s.match(/<Resistance>([\d.]+)<\/Resistance>/i) || [])[1];
+            const avgWatts = watts.length ? (watts.reduce((A,B)=>A+B,0)/watts.length) : (avgWattsTag ? parseFloat(avgWattsTag) : 0);
+            const maxWatts = watts.length ? Math.max(...watts) : (maxWattsTag ? parseFloat(maxWattsTag) : 0);
+            const resistance = resistanceTag ? parseFloat(resistanceTag) : 0;
+
+            const avgCadence = cadences.length ? (cadences.reduce((a,b)=>a+b,0)/cadences.length) : 0;
+            let durationSeconds = 0;
+            if (firstTime && lastTime){
+              durationSeconds = (Date.parse(lastTime) - Date.parse(firstTime)) / 1000;
+              if (isNaN(durationSeconds) || durationSeconds < 0) durationSeconds = 0;
+            }
+            const durationMinutes = durationSeconds / 60;
+            
+            // Calculer les pas à partir de la distance (max détectée)
+            const stepsPerKmVal = parseFloat(stepsPerKmInput.value) || 1250;
+            let estimatedSteps = 0;
+            if (max > 0) {
+              estimatedSteps = Math.round((max / 1000) * stepsPerKmVal);
+            }
+
+            // calculer élévation positive cumulée (gain d'altitude) et estimer les étages
+            let totalAscent = 0;
+            for (let i = 1; i < alts.length; i++){
+              const diff = alts[i] - alts[i-1];
+              if (!isNaN(diff) && diff > 0) totalAscent += diff;
+            }
+            totalAscent = Math.round(totalAscent * 100) / 100; // arrondi en mètres
+            const floors = Math.round(totalAscent / 3); // heuristique: 3 m par étage
+
+            // si pas d'altitude (treadmill), estimer vertical meters depuis la puissance
+            let estVertical = 0;
+            let estFloorsPower = 0;
+            if ((alts.length === 0 || totalAscent === 0) && avgWatts > 0 && durationSeconds > 0){
+              const assumedWeight = parseFloat(weightInput.value) || 70; // kg (UI)
+              const g = 9.81;
+              // puissance (W) = m * g * vertical_speed => vertical_m = (power * time) / (m*g)
+              estVertical = (avgWatts * durationSeconds) / (assumedWeight * g);
+              // si resistance est présente, l'utiliser pour ajuster l'estimation
+              if (resistance && !isNaN(resistance)){
+                // résistance souvent 0-100 -> scale factor
+                const factor = resistance > 1 ? (1 + resistance/100) : (1 + resistance);
+                estVertical *= factor;
+              }
+              estVertical = Math.round(estVertical * 100) / 100;
+              estFloorsPower = Math.round(estVertical / 3);
+            }
+
+            // Écrire dans FINAL
+            const fh = await dstHandle.getFileHandle(name, {create:true});
+            const writable = await fh.createWritable();
+            await writable.write(s);
+            await writable.close();
+            log('Écrit :', name, '| distance max =', max);
+            count++;
+
+            summaryEntries.push({
+              name,
+              estimatedSteps,
+              avgCadence: Math.round(avgCadence*100)/100,
+              durationSeconds: Math.round(durationSeconds),
+              avgWatts: Math.round(avgWatts*100)/100,
+              maxWatts: Math.round(maxWatts*100)/100,
+              resistance: resistance,
+              totalAscent,
+              floors,
+              estVertical,
+              estFloorsPower
+            });
+          }
+        }
+// écrire summary.txt dans FINAL (format lisible, pas uniquement)
+        if (dstHandle && summaryEntries.length){
+          let txt = '';
+          summaryEntries.forEach(e => {
+            txt += `${e.name}: ${e.estimatedSteps} pas\n`;
+            });
+            const sfh = await dstHandle.getFileHandle('summary.txt', {create:true});
+            const sw = await sfh.createWritable();
+            await sw.write(txt);
+            await sw.close();
+            log('Écrit : summary.txt dans FINAL');
+          }
+
+        log('Terminé — fichiers traités :', count);
+      }catch(e){
+        log('Erreur pendant le traitement:', e.message);
+        console.error(e);
+      }finally{ startBtn.disabled = false; }
+    });
+
+    const zipBtn = document.getElementById('zipBtn');
+    // activer/désactiver les boutons selon la sélection
+    function updateButtons(){
+      startBtn.disabled = !(srcHandle && dstHandle);
+      zipBtn.disabled = !srcHandle;
+    }
+
+    // appelé après pickSrc/pickDst
+    pickSrc.addEventListener('click', () => setTimeout(updateButtons, 50));
+    pickDst.addEventListener('click', () => setTimeout(updateButtons, 50));
+
+    zipBtn.addEventListener('click', async () => {
+      if (!srcHandle) return alert('Choisissez le dossier SRC');
+      zipBtn.disabled = true;
+      try{
+        const filesOut = [];
+        const summaryOut = [];
+        for await (const [name, entry] of srcHandle.entries()){
+          if (entry.kind === 'file' && name.toLowerCase().endsWith('.tcx')){
+            log('Lecture :', name);
+            const file = await entry.getFile();
+            let s = await file.text();
+
+            s = s.replace(/(<Activity\b[^>]*\bSport=")([^"]*)(")/i, '$1Running$3');
+
+            const tpRegex = /<Trackpoint\b[\s\S]*?<DistanceMeters>([\d.]+)<\/DistanceMeters>[\s\S]*?<\/Trackpoint>/gi;
+            let m; let max = 0;
+            while ((m = tpRegex.exec(s)) !== null){
+              const val = parseFloat(m[1]); if (!isNaN(val) && val>max) max = val;
+            }
+
+            if (max>0){
+              const lapDistRegex = /(<Lap\b[^>]*>[\s\S]*?<DistanceMeters>)([\d.]+)(<\/DistanceMeters>[\s\S]*?<\/Lap>)/i;
+              if (lapDistRegex.test(s)){
+                s = s.replace(lapDistRegex, function(_, a, _old, b){ return a + String(max) + b; });
+              }else{
+                s = s.replace(/(<Lap\b[^>]*>)/i, function(m0){ return m0 + '\n      <DistanceMeters>' + String(max) + '</DistanceMeters>'; });
+              }
+            } else {
+              log('Avertissement: aucune DistanceMeters trouvée dans les Trackpoints pour', name);
+            }
+
+            // calcul cadence/durée pour résumé
+              const cadenceRegex = /<Cadence>([\d.]+)<\/Cadence>/gi;
+              let c; const cadences = [];
+              while ((c = cadenceRegex.exec(s)) !== null){ cadences.push(parseFloat(c[1])); }
+              const timeTpRegex = /<Trackpoint[\s\S]*?<Time>([^<]+)<\/Time>[\s\S]*?<\/Trackpoint>/gi;
+              let t; let firstTime = null; let lastTime = null;
+              while ((t = timeTpRegex.exec(s)) !== null){ const tm = t[1]; if (!firstTime) firstTime = tm; lastTime = tm; }
+              const altRegex = /<AltitudeMeters>([\d.-]+)<\/AltitudeMeters>/gi;
+              let a; const alts = [];
+              while ((a = altRegex.exec(s)) !== null){ alts.push(parseFloat(a[1])); }
+              const avgCadence = cadences.length ? (cadences.reduce((a,b)=>a+b,0)/cadences.length) : 0;
+              let durationSeconds = 0; if (firstTime && lastTime) durationSeconds = (Date.parse(lastTime)-Date.parse(firstTime))/1000; if (isNaN(durationSeconds) || durationSeconds<0) durationSeconds=0;
+              const durationMinutes = durationSeconds/60;
+              const stepsPerKmVal = parseFloat(stepsPerKmInput.value) || 1250;
+              let estimatedSteps = 0; if (max>0) { estimatedSteps = Math.round((max/1000)*stepsPerKmVal); }
+              const wattsRegex = /<Watts>([\d.]+)<\/Watts>/gi; let w; const watts = []; while ((w = wattsRegex.exec(s)) !== null){ watts.push(parseFloat(w[1])); }
+              const avgWattsTag = (s.match(/<AverageWatts>([\d.]+)<\/AverageWatts>/i) || [])[1];
+              const maxWattsTag = (s.match(/<MaxWatts>([\d.]+)<\/MaxWatts>/i) || (s.match(/<MaximumWatts>([\d.]+)<\/MaximumWatts>/i) || []))[1];
+              const resistanceTag = (s.match(/<Resistance>([\d.]+)<\/Resistance>/i) || [])[1];
+              const avgWatts = watts.length ? (watts.reduce((A,B)=>A+B,0)/watts.length) : (avgWattsTag ? parseFloat(avgWattsTag) : 0);
+              const maxWatts = watts.length ? Math.max(...watts) : (maxWattsTag ? parseFloat(maxWattsTag) : 0);
+              const resistance = resistanceTag ? parseFloat(resistanceTag) : 0;
+              let totalAscent = 0; for (let i=1;i<alts.length;i++){ const diff = alts[i]-alts[i-1]; if (!isNaN(diff) && diff>0) totalAscent += diff; } totalAscent = Math.round(totalAscent*100)/100; const floors = Math.round(totalAscent/3);
+              let estVertical = 0; let estFloorsPower = 0; if ((alts.length===0 || totalAscent===0) && avgWatts>0 && durationSeconds>0){ const assumedWeight = parseFloat(weightInput.value) || 70; const g=9.81; estVertical=(avgWatts*durationSeconds)/(assumedWeight*g); if (resistance && !isNaN(resistance)){ const factor = resistance>1 ? (1+resistance/100) : (1+resistance); estVertical *= factor; } estVertical = Math.round(estVertical*100)/100; estFloorsPower = Math.round(estVertical/3); }
+
+            filesOut.push({name, content: s});
+            summaryOut.push({name, estimatedSteps, avgCadence: Math.round(avgCadence*100)/100, durationSeconds: Math.round(durationSeconds)});
+            log('Préparé :', name, '| distance max =', max);
+          }
+        }
+
+        if (filesOut.length === 0){ log('Aucun fichier .tcx trouvé dans SRC.'); return; }
+
+        log('Création du ZIP...');
+        const zip = new JSZip();
+        filesOut.forEach(f => zip.file(f.name, f.content));
+        // ajouter summary.txt au ZIP (format lisible, pas uniquement)
+          let txt = '';
+          summaryOut.forEach(e => {
+            txt += `${e.name}: ${e.estimatedSteps} pas\n`;
+          });
+          zip.file('summary.txt', txt);
+        const blob = await zip.generateAsync({type:'blob'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'fixed-tcx-files.zip';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        log('ZIP prêt — téléchargement déclenché');
+      }catch(e){ log('Erreur ZIP:', e.message); console.error(e); }
+      finally{ zipBtn.disabled = false; }
+    });
+  </script>
+</body>
+</html>
