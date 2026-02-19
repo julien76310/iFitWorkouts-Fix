@@ -6,23 +6,57 @@
   <title>TCX Workout Fixer (Brave Compatible)</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 900px; margin: 50px auto; padding: 20px; background: #f5f5f5; }
-    .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    h1 { color: #333; }
-    .section { margin: 25px 0; padding: 20px; border: 1px solid #ddd; border-radius: 5px; background: #fafafa; }
-    label { display: block; margin: 10px 0 5px; font-weight: bold; color: #555; }
-    input { padding: 8px; margin: 5px 0; width: 100%; max-width: 300px; border: 1px solid #ccc; border-radius: 4px; }
-    button { padding: 10px 20px; margin: 5px 5px 5px 0; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
-    button:hover { background: #005a9e; }
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      margin: 0; padding: 10px; background: #f0f2f5; font-size: 16px;
+    }
+    .container { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    h1 { color: #1a1a1a; margin: 10px 0 5px; font-size: 24px; }
+    .section { margin: 15px 0; padding: 15px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa; }
+    .section h3 { margin: 0 0 12px; font-size: 18px; color: #333; }
+    label { display: block; margin: 12px 0 6px; font-weight: 600; color: #555; font-size: 14px; }
+    input[type="number"], input[type="file"] { 
+      padding: 12px; margin: 8px 0; width: 100%; border: 1px solid #ccc; border-radius: 6px; 
+      font-size: 16px; -webkit-appearance: none; appearance: none;
+    }
+    input[type="file"] { padding: 10px; cursor: pointer; }
+    button { 
+      padding: 14px 20px; margin: 8px 0; width: 100%; background: #0078d4; color: white; 
+      border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: 600;
+      touch-action: manipulation; -webkit-user-select: none;
+    }
+    button:active { background: #005a9e; }
     button:disabled { background: #ccc; cursor: not-allowed; }
-    #dropZone { border: 2px dashed #0078d4; padding: 40px; text-align: center; border-radius: 5px; background: #f0f7ff; margin: 20px 0; cursor: pointer; transition: background 0.2s; }
+    #dropZone { 
+      border: 2px dashed #0078d4; padding: 50px 15px; text-align: center; border-radius: 8px; 
+      background: #f0f7ff; margin: 15px 0; cursor: pointer; transition: background 0.2s; 
+      min-height: 120px; display: flex; align-items: center; justify-content: center;
+    }
+    #dropZone p { margin: 0; font-size: 16px; line-height: 1.5; }
+    #dropZone small { font-size: 13px; display: block; margin-top: 8px; }
     #dropZone.dragover { background: #e8f4ff; border-color: #00a4ef; }
     #dropZone.dragging { background: #cce5ff; border-color: #0078d4; font-weight: bold; }
-    #log { background: #333; color: #0f0; padding: 15px; border-radius: 4px; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 12px; }
-    .status { margin: 10px 0; padding: 10px; border-radius: 4px; }
-    .info { background: #e3f2fd; color: #1565c0; padding: 10px; border-radius: 4px; margin: 10px 0; }
-    .warning { background: #fff3e0; color: #e65100; }
-    .success { background: #e8f5e9; color: #2e7d32; }
+    #log { 
+      background: #1a1a1a; color: #00ff00; padding: 12px; border-radius: 6px; 
+      max-height: 200px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 11px; 
+      line-height: 1.4; white-space: pre-wrap; word-wrap: break-word;
+    }
+    .info { background: #e3f2fd; color: #1565c0; padding: 12px; border-radius: 6px; margin: 10px 0; font-size: 14px; }
+    .file-item { 
+      background: #f5f5f5; padding: 10px; margin: 8px 0; border-radius: 6px; border-left: 4px solid #0078d4; 
+      font-size: 14px; display: flex; justify-content: space-between; align-items: center;
+    }
+    .file-name { font-weight: 500; }
+    .file-steps { color: #0078d4; font-weight: 600; }
+    @media (max-width: 600px) {
+      body { padding: 8px; }
+      .container { padding: 12px; }
+      h1 { font-size: 20px; }
+      .section { padding: 12px; margin: 10px 0; }
+      button { padding: 12px 16px; font-size: 15px; }
+      #dropZone { padding: 40px 10px; min-height: 100px; }
+    }
   </style>
 </head>
 <body>
@@ -42,14 +76,26 @@
     </div>
 
     <div class="section">
-      <h3>📁 Zone de dépôt</h3>
+      <h3>📁 Sélectionner fichiers</h3>
+      <label for="fileInput">Fichiers .tcx :</label>
+      <input id="fileInput" type="file" multiple accept=".tcx" />
+      
+      <div style="margin-top: 15px; padding: 10px; background: #e8f5e9; border-radius: 6px; font-size: 13px; color: #2e7d32;">
+        📝 <strong>Ou glissez-déposez</strong> vos fichiers .tcx ici :
+      </div>
       <div id="dropZone">
         <p style="font-size: 16px; margin: 0;">
-          📂 Glissez-déposez ici vos fichiers .tcx<br>
-          <small style="color: #666; font-size: 12px;">ou un dossier contenant des fichiers .tcx</small>
+          📂 Glissez vos fichiers<br>
+          <small style="color: #666; font-size: 12px;">fichiers .tcx</small>
         </p>
       </div>
-      <button id="zipBtn" disabled>⬇️ Télécharger ZIP</button>
+    </div>
+
+    <div class="section">
+      <h3>📋 Fichiers chargés</h3>
+      <div id="filesList" style="min-height: 30px; color: #999; font-size: 14px;">
+        Aucun fichier sélectionné
+      </div>
     </div>
 
     <div class="section">
@@ -61,7 +107,8 @@
   <script>
     const logEl = document.getElementById('log');
     const dropZone = document.getElementById('dropZone');
-    const zipBtn = document.getElementById('zipBtn');
+    const fileInput = document.getElementById('fileInput');
+    const filesList = document.getElementById('filesList');
     const weightInput = document.getElementById('weightInput');
     const stepsPerKmInput = document.getElementById('stepsPerKmInput');
 
@@ -73,6 +120,36 @@
       logEl.innerHTML += `[${now}] ${msg}\n`;
       logEl.scrollTop = logEl.scrollHeight;
     }
+
+    function updateFilesList() {
+      if (processedFiles.length === 0) {
+        filesList.innerHTML = '<span style="color: #999;">Aucun fichier sélectionné</span>';
+        return;
+      }
+      let html = '';
+      processedFiles.forEach(f => {
+        html += `<div class="file-item"><span class="file-name">✓ ${f.name}</span> <span class="file-steps">${f.estimatedSteps} pas</span></div>`;
+      });
+      filesList.innerHTML = html;
+    }
+
+    // File input
+    fileInput.addEventListener('change', async (e) => {
+      processedFiles = [];
+      const files = Array.from(e.target.files).filter(f => f.name.toLowerCase().endsWith('.tcx'));
+      
+      if (files.length === 0) {
+        log('❌ Aucun fichier .tcx sélectionné');
+        return;
+      }
+
+      log(`📥 Traitement de ${files.length} fichier(s)...`);
+      for (const file of files) {
+        await processFile(file);
+      }
+      updateFilesList();
+      log(`✅ ${processedFiles.length} fichier(s) prêt(s)`);
+    });
 
     // Drag and drop
     dropZone.addEventListener('dragover', (e) => {
@@ -87,141 +164,87 @@
     dropZone.addEventListener('drop', async (e) => {
       e.preventDefault();
       dropZone.classList.remove('dragover');
-      dropZone.classList.add('dragging');
 
-      const items = e.dataTransfer.items;
-      if (!items) {
-        log('❌ Erreur: Aucun fichier détecté.');
-        dropZone.classList.remove('dragging');
+      const files = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.tcx'));
+      
+      if (files.length === 0) {
+        log('❌ Aucun fichier .tcx détecté');
         return;
       }
 
       processedFiles = [];
-      let filesCount = 0;
-
-      try {
-        for (const item of items) {
-          const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
-          if (!entry) continue;
-
-          if (entry.isDirectory) {
-            log('📂 Lecture du dossier:', entry.name);
-            await readDirectory(entry);
-          } else if (entry.isFile) {
-            const file = await new Promise((resolve, reject) => {
-              entry.file(resolve, reject);
-            });
-            if (file.name.toLowerCase().endsWith('.tcx')) {
-              filesCount++;
-              await processFile(file);
-            }
-          }
-        }
-
-        if (filesCount === 0 && e.dataTransfer.files.length > 0) {
-          for (const file of e.dataTransfer.files) {
-            if (file.name.toLowerCase().endsWith('.tcx')) {
-              filesCount++;
-              await processFile(file);
-            }
-          }
-        }
-
-        if (processedFiles.length > 0) {
-          log(`✅ ${processedFiles.length} fichier(s) traité(s) avec succès`);
-          zipBtn.disabled = false;
-        } else {
-          log('⚠️ Aucun fichier .tcx trouvé');
-        }
-      } catch (err) {
-        log('❌ Erreur:', err.message);
-      } finally {
-        dropZone.classList.remove('dragging');
+      log(`📥 Traitement de ${files.length} fichier(s)...`);
+      
+      for (const file of files) {
+        await processFile(file);
       }
+      
+      updateFilesList();
+      log(`✅ ${processedFiles.length} fichier(s) prêt(s)`);
     });
 
-    async function readDirectory(dirEntry) {
-      const reader = dirEntry.createReader();
-      return new Promise((resolve) => {
-        const readEntries = () => {
-          reader.readEntries(async (entries) => {
-            for (const entry of entries) {
-              if (entry.isFile && entry.name.toLowerCase().endsWith('.tcx')) {
-                const file = await new Promise((res, rej) => entry.file(res, rej));
-                await processFile(file);
-              } else if (entry.isDirectory) {
-                await readDirectory(entry);
-              }
-            }
-            if (entries.length === 0) resolve();
-            else readEntries();
-          });
-        };
-        readEntries();
-      });
-    }
-
     async function processFile(file) {
-      log('📄 Traitement:', file.name);
+      try {
+        let s = await file.text();
 
-      let s = await file.text();
+        // Changer Sport="Other" en Sport="Running"
+        s = s.replace(/(<Activity\b[^>]*\bSport=")([^"]*)(")/i, '$1Running$3');
 
-      // Changer Sport="Other" en Sport="Running"
-      s = s.replace(/(<Activity\b[^>]*\bSport=")([^"]*)(")/i, '$1Running$3');
-
-      // Extraire max distance depuis les Trackpoints
-      const tpRegex = /<Trackpoint\b[\s\S]*?<DistanceMeters>([\d.]+)<\/DistanceMeters>[\s\S]*?<\/Trackpoint>/gi;
-      let m;
-      let max = 0;
-      while ((m = tpRegex.exec(s)) !== null) {
-        const val = parseFloat(m[1]);
-        if (!isNaN(val) && val > max) max = val;
-      }
-
-      // Écrire max distance dans Lap
-      if (max > 0) {
-        const lapDistRegex = /(<Lap\b[^>]*>[\s\S]*?<DistanceMeters>)([\d.]+)(<\/DistanceMeters>[\s\S]*?<\/Lap>)/i;
-        if (lapDistRegex.test(s)) {
-          s = s.replace(lapDistRegex, function(_, a, _old, b) { return a + String(max) + b; });
-        } else {
-          s = s.replace(/(<Lap\b[^>]*>)/i, function(m0) { return m0 + '\n      <DistanceMeters>' + String(max) + '</DistanceMeters>'; });
+        // Extraire max distance depuis les Trackpoints
+        const tpRegex = /<Trackpoint\b[\s\S]*?<DistanceMeters>([\d.]+)<\/DistanceMeters>[\s\S]*?<\/Trackpoint>/gi;
+        let m;
+        let max = 0;
+        while ((m = tpRegex.exec(s)) !== null) {
+          const val = parseFloat(m[1]);
+          if (!isNaN(val) && val > max) max = val;
         }
+
+        // Écrire max distance dans Lap
+        if (max > 0) {
+          const lapDistRegex = /(<Lap\b[^>]*>[\s\S]*?<DistanceMeters>)([\d.]+)(<\/DistanceMeters>[\s\S]*?<\/Lap>)/i;
+          if (lapDistRegex.test(s)) {
+            s = s.replace(lapDistRegex, function(_, a, _old, b) { return a + String(max) + b; });
+          } else {
+            s = s.replace(/(<Lap\b[^>]*>)/i, function(m0) { return m0 + '\n      <DistanceMeters>' + String(max) + '</DistanceMeters>'; });
+          }
+        }
+
+        // Calculer pas depuis distance
+        const stepsPerKmVal = parseFloat(stepsPerKmInput.value) || 1250;
+        let estimatedSteps = 0;
+        if (max > 0) {
+          estimatedSteps = Math.round((max / 1000) * stepsPerKmVal);
+        }
+
+        const cadenceRegex = /<Cadence>([\d.]+)<\/Cadence>/gi;
+        let c;
+        const cadences = [];
+        while ((c = cadenceRegex.exec(s)) !== null) {
+          cadences.push(parseFloat(c[1]));
+        }
+        const avgCadence = cadences.length ? (cadences.reduce((a, b) => a + b, 0) / cadences.length) : 0;
+
+        processedFiles.push({
+          name: file.name,
+          content: s,
+          estimatedSteps,
+          avgCadence: Math.round(avgCadence * 100) / 100,
+          distance: max
+        });
+
+        log(`  ✓ ${file.name}: ${estimatedSteps} pas (${max}m)`);
+      } catch (err) {
+        log(`  ✗ ${file.name}: ${err.message}`);
       }
-
-      // Calculer pas depuis distance
-      const stepsPerKmVal = parseFloat(stepsPerKmInput.value) || 1250;
-      let estimatedSteps = 0;
-      if (max > 0) {
-        estimatedSteps = Math.round((max / 1000) * stepsPerKmVal);
-      }
-
-      const cadenceRegex = /<Cadence>([\d.]+)<\/Cadence>/gi;
-      let c;
-      const cadences = [];
-      while ((c = cadenceRegex.exec(s)) !== null) {
-        cadences.push(parseFloat(c[1]));
-      }
-      const avgCadence = cadences.length ? (cadences.reduce((a, b) => a + b, 0) / cadences.length) : 0;
-
-      processedFiles.push({
-        name: file.name,
-        content: s,
-        estimatedSteps,
-        avgCadence: Math.round(avgCadence * 100) / 100,
-        distance: max
-      });
-
-      log(`  ✓ ${file.name}: ${estimatedSteps} pas, distance: ${max}m`);
     }
 
     // Générer ZIP
-    zipBtn.addEventListener('click', async () => {
+    async function generateZip() {
       if (processedFiles.length === 0) {
         log('❌ Aucun fichier à télécharger');
         return;
       }
 
-      zipBtn.disabled = true;
       try {
         log('📦 Création du ZIP...');
         const zip = new JSZip();
@@ -248,15 +271,21 @@
         a.remove();
         URL.revokeObjectURL(url);
 
-        log('✅ ZIP prêt — téléchargement déclenché');
+        log('✅ ZIP téléchargé — extraire dans votre dossier FINAL');
       } catch (e) {
         log('❌ Erreur ZIP:', e.message);
-      } finally {
-        zipBtn.disabled = false;
       }
-    });
+    }
 
-    log('✅ App prête. Glissez vos fichiers .tcx ici.');
+    log('✅ App prête.');
+    log('📱 Sélectionnez des fichiers .tcx');
+    
+    // Ajouter bouton ZIP dynamiquement dans section logs
+    const logsSection = document.querySelector('.section:has(#log)');
+    const zipBtnDiv = document.createElement('div');
+    zipBtnDiv.style.marginTop = '15px';
+    zipBtnDiv.innerHTML = '<button id="zipBtn" onclick="generateZip()" style="background: #28a745;">⬇️ Télécharger ZIP</button>';
+    logsSection.appendChild(zipBtnDiv);
   </script>
 </body>
 </html>
